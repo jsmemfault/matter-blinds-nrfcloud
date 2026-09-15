@@ -1,0 +1,114 @@
+mainmenu "Matter Window Covering with Memfault Observability (nRF52840)"
+
+config STATE_LEDS
+	bool "Use LEDs to indicate the device state"
+	default y
+	help
+	  Use LEDs to render commissioning progress and factory reset initiation.
+
+# Reduce Thread TX output power to 0 dBm for SED device
+config OPENTHREAD_DEFAULT_TX_POWER
+	default 0
+
+menu "Observability"
+
+config BLINDS_UDP_ECHO_SHELL
+	bool "UDP echo shell commands"
+	default y
+	depends on SHELL
+	help
+	  Adds 'echo ipv6' / 'echo nat64' for probing whether a given border
+	  router actually routes device traffic to the internet. This is the
+	  fastest way to characterise a new gateway — keep it in lab images.
+
+config BLINDS_THREAD_AUTOJOIN
+	bool "Auto-join Thread from a built-in dataset"
+	default n
+	help
+	  Developer convenience: join a known Thread network at boot without
+	  BLE commissioning. Requires a real dataset in thread_prov.c, which
+	  contains the network master key — never enable for a shipped image.
+
+endmenu
+
+menu "Device identity provisioning"
+
+config PROVISIONING
+	bool "On-die key generation and attested CSR"
+	depends on SETTINGS
+	# PKCS#10 CSR construction. MBEDTLS_X509_CSR_WRITE_C alone does not
+	# build: it needs X509_CREATE_C, which in turn needs OID_C,
+	# ASN1_WRITE_C, PK_PARSE_C and either MD_C or USE_PSA_CRYPTO
+	# (mbedtls check_config.h:1034). USE_PSA_CRYPTO is required anyway for
+	# mbedtls_pk_setup_opaque(), which is what keeps the private key inside
+	# PSA while the CSR is being signed.
+	select MBEDTLS_X509_CSR_WRITE_C
+	select MBEDTLS_X509_CREATE_C
+	select MBEDTLS_OID_C
+	select MBEDTLS_ASN1_WRITE_C
+	select MBEDTLS_PK_PARSE_C
+	select MBEDTLS_PK_WRITE_C
+	select MBEDTLS_USE_PSA_CRYPTO
+	# No MBEDTLS_PEM_WRITE_C: provisioning emits DER and base64-encodes it
+	# in the shell layer, so the PEM writer would be dead flash.
+	select BASE64
+	help
+	  Generate the nRF Cloud identity keypair inside the device and emit a
+	  PKCS#10 CSR signed by the Matter DAC key, instead of compiling a
+	  private key into the image. See plans/identity-provisioning.md.
+
+if PROVISIONING
+
+config PROVISIONING_PSA_KEY_ID
+	int "PSA persistent key ID for the device identity key"
+	default 305419896
+
+config PROVISIONING_KEY_IN_KMU
+	bool "Store the identity key in hardware KMU slots (nRF54L only)"
+	default n
+	help
+	  Not available on nRF52840 — that part falls back to trusted storage
+	  plus APPROTECT, which is the same protection the Matter DAC private
+	  key already has. This symbol is what changes on migration to nRF54L.
+
+config PROVISIONING_FALLBACK_KEY
+	bool "Fall back to the compiled-in key in credentials.h"
+	default n
+	help
+	  Set to n for production. With this enabled an unprovisioned unit still
+	  has a usable identity, which is exactly what a shipped image must not.
+
+config PROVISIONING_SHELL
+	bool "Factory fixture shell commands"
+	default y
+	depends on SHELL
+
+endif # PROVISIONING
+
+endmenu
+
+#
+# mbedTLS DTLS client layer.
+#
+# nrf/subsys/net/openthread/Kconfig.defconfig forces MBEDTLS_SSL_TLS_C and
+# MBEDTLS_SSL_CLI_C to 'n' unless one of OPENTHREAD_JOINER, COMMISSIONER,
+# COAPS or BLE_TCAT is enabled. MBEDTLS_SSL_TLS_C is promptless, so prj.conf
+# cannot raise it — the value comes purely from whichever 'default' is parsed
+# first. These definitions precede the sourced NCS Kconfig files, so they win.
+#
+# The nRF54L project got here via CONFIG_OPENTHREAD_COAPS=y. That is not an
+# option on nRF52840: the prebuilt MTD library exports no otCoapSecure symbols.
+# We never use OpenThread's CoAP stack anyway — all traffic goes through the
+# native UDP API — so overriding the two symbols directly is both cheaper and
+# more honest about what is actually needed.
+#
+config MBEDTLS_SSL_TLS_C
+	default y
+
+config MBEDTLS_SSL_CLI_C
+	default y
+
+source "$(ZEPHYR_CONNECTEDHOMEIP_MODULE_DIR)/config/nrfconnect/chip-module/Kconfig.features"
+source "$(ZEPHYR_CONNECTEDHOMEIP_MODULE_DIR)/config/nrfconnect/chip-module/Kconfig.defaults"
+source "$(ZEPHYR_NRF_MODULE_DIR)/samples/matter/common/src/Kconfig"
+source "Kconfig.zephyr"

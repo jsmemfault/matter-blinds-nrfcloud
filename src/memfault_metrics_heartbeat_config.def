@@ -1,0 +1,101 @@
+/*
+ * Memfault heartbeat metrics — smart window covering on nRF52840.
+ *
+ * Three groups, and the split is deliberate:
+ *
+ *  - ot_* / matter_* are the CONNECTIVITY metrics. These are what answer
+ *    "does our product behave on Apple vs Google vs Amazon vs Eero." Segment
+ *    them by the matter_admin_vendor_id attribute and the ecosystem-specific
+ *    failure modes become visible at fleet scale.
+ *  - blinds_* are the PRODUCT metrics — what the covering actually did.
+ *  - identity_* / nrfcloud_* are the PLUMBING metrics: is telemetry itself
+ *    healthy, and will it still be healthy next year.
+ */
+
+/* ---------------- Thread connectivity ---------------- */
+
+/* Role snapshot (0=disabled 1=detached 2=child 3=router 4=leader) */
+MEMFAULT_METRICS_KEY_DEFINE(ot_role, kMemfaultMetricType_Unsigned)
+
+/* Time-in-role deltas (ms per heartbeat). ot_detached_ms is the headline
+ * gateway-health number: time the device could not reach its network. */
+MEMFAULT_METRICS_KEY_DEFINE(ot_detached_ms, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(ot_child_ms, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(ot_router_ms, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(ot_leader_ms, kMemfaultMetricType_Unsigned)
+
+/* MLE event deltas. Elevated parent/partition churn on one ecosystem and not
+ * another is the signature of a border router behaving differently. */
+MEMFAULT_METRICS_KEY_DEFINE(ot_attach_attempts, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(ot_parent_changes, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(ot_partition_changes, kMemfaultMetricType_Unsigned)
+
+/* Topology snapshots */
+MEMFAULT_METRICS_KEY_DEFINE(ot_neighbor_count, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(ot_router_count, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(ot_channel, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(ot_link_quality, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(ot_parent_rssi, kMemfaultMetricType_Signed)
+
+/* MAC counter deltas — RF environment quality */
+MEMFAULT_METRICS_KEY_DEFINE(ot_tx_total, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(ot_tx_retry, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(ot_tx_err_cca, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(ot_tx_err_abort, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(ot_rx_err_fcs, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(ot_rx_err_sec, kMemfaultMetricType_Unsigned)
+
+/* ---------------- Matter fabric health ---------------- */
+
+MEMFAULT_METRICS_KEY_DEFINE(matter_fabric_count, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(matter_subscriptions_active, kMemfaultMetricType_Unsigned)
+
+/*
+ * Vendor ID of the fabric administrator: 0x1349 Apple, 0x6006 Google,
+ * 0x1217 Amazon, 0x1049 SmartThings.
+ *
+ * This is the single most valuable field in the whole set. Pushed as a
+ * Memfault device attribute it lets every metric above be sliced by
+ * ecosystem, which is a question Matter gives a manufacturer no other way to answer.
+ */
+MEMFAULT_METRICS_KEY_DEFINE(matter_admin_vendor_id, kMemfaultMetricType_Unsigned)
+
+MEMFAULT_METRICS_KEY_DEFINE(matter_commissioning_count, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(matter_case_failures, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(matter_subscription_teardowns, kMemfaultMetricType_Unsigned)
+
+/* ---------------- Product behaviour ---------------- */
+
+/* Position in hundredths of a percent; 65535 == unknown/null */
+MEMFAULT_METRICS_KEY_DEFINE(blinds_lift_position, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(blinds_tilt_position, kMemfaultMetricType_Unsigned)
+
+/* 0=stalled 1=opening 2=closing */
+MEMFAULT_METRICS_KEY_DEFINE(blinds_lift_motion, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(blinds_tilt_motion, kMemfaultMetricType_Unsigned)
+
+/* A covering that loses calibration in the field becomes a support call. */
+MEMFAULT_METRICS_KEY_DEFINE(blinds_calibrated, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(blinds_config_status, kMemfaultMetricType_Unsigned)
+
+/* Deltas per heartbeat — duty cycle and mechanical health */
+MEMFAULT_METRICS_KEY_DEFINE(blinds_moves, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(blinds_stalls, kMemfaultMetricType_Unsigned)
+
+/* ---------------- Telemetry plumbing ---------------- */
+
+MEMFAULT_METRICS_KEY_DEFINE(nrfcloud_upload_err, kMemfaultMetricType_Unsigned)
+
+/*
+ * Time sync is on the critical path for authentication: JWT signing and
+ * certificate validity both need wall clock. A gateway that will not route
+ * outbound traffic breaks SNTP and therefore breaks auth — this metric makes
+ * that visible instead of leaving it to be inferred from silence.
+ */
+MEMFAULT_METRICS_KEY_DEFINE(time_sync_ok, kMemfaultMetricType_Unsigned)
+
+/* identity_state: 0=unprovisioned 1=key only 2=key+certificate
+ * identity_cert_days_left: alert well before this reaches zero — certificates
+ * expire long before a motorised shade does. */
+MEMFAULT_METRICS_KEY_DEFINE(identity_state, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(identity_cert_days_left, kMemfaultMetricType_Unsigned)

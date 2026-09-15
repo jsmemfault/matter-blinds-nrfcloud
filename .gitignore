@@ -1,0 +1,10 @@
+build/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Never commit real credentials. See NOTICE.md and plans/identity-provisioning.md.
+keys/
+*.pem
+!src/**/*.pem
+onboard.csv
