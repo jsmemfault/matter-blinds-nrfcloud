@@ -160,13 +160,18 @@ static int bio_recv_timeout(void *ctx, unsigned char *buf, size_t len,
 	return n;
 }
 
-/* --- RNG wrapper for mbedTLS --- */
+/* --- RNG wrapper for mbedTLS ---
+ * Only needed when mbedTLS is not drawing randomness from PSA (see the
+ * mbedtls_ssl_conf_rng() call below).
+ */
 
+#if !defined(MBEDTLS_USE_PSA_CRYPTO)
 static int dtls_rng(void *ctx, unsigned char *buf, size_t len)
 {
 	ARG_UNUSED(ctx);
 	return sys_csrand_get(buf, len) == 0 ? 0 : -1;
 }
+#endif
 
 /* --- DNS resolution --- */
 
@@ -336,7 +341,16 @@ int nrfcloud_connect(struct nrfcloud_session *s)
 
 	mbedtls_ssl_conf_authmode(&s->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
 	mbedtls_ssl_conf_ca_chain(&s->conf, &s->ca_cert, NULL);
+#if !defined(MBEDTLS_USE_PSA_CRYPTO)
+	/*
+	 * NCS 3.4.0 ships an mbedTLS where mbedtls_ssl_conf_rng() no longer
+	 * exists when MBEDTLS_USE_PSA_CRYPTO is enabled — the SSL layer draws
+	 * randomness from PSA itself, so configuring an RNG callback is both
+	 * unnecessary and unavailable. Kept for 3.2.x/3.3.x, where it is still
+	 * required.
+	 */
 	mbedtls_ssl_conf_rng(&s->conf, dtls_rng, NULL);
+#endif
 
 	ret = mbedtls_ssl_setup(&s->ssl, &s->conf);
 	if (ret != 0) {

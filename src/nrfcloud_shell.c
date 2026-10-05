@@ -25,6 +25,20 @@
 #include <memfault/core/data_packetizer.h>
 #endif
 
+/*
+ * MCUboot secondary slot identifier.
+ *
+ * With Partition Manager (NCS 3.2.x/3.3.x) the slot is the PM partition
+ * 'mcuboot_secondary'. NCS 3.4.0 declares Matter partitions in devicetree with
+ * PM disabled, where the same region is the 'slot1_partition' node in external
+ * flash. Same address and size either way — only the name differs.
+ */
+#ifdef CONFIG_PARTITION_MANAGER_ENABLED
+#define OTA_SECONDARY_PARTITION_ID FIXED_PARTITION_ID(mcuboot_secondary)
+#else
+#define OTA_SECONDARY_PARTITION_ID FIXED_PARTITION_ID(slot1_partition)
+#endif
+
 LOG_MODULE_REGISTER(nrfcloud_shell, LOG_LEVEL_INF);
 
 /* Memfault chunk proxy URL prefix */
@@ -498,7 +512,7 @@ static int cmd_nrfcloud_ota(const struct shell *sh, size_t argc,
 	 */
 	const struct flash_area *fa;
 
-	ret = flash_area_open(FIXED_PARTITION_ID(mcuboot_secondary), &fa);
+	ret = flash_area_open(OTA_SECONDARY_PARTITION_ID, &fa);
 	if (ret != 0) {
 		shell_error(sh, "Failed to open secondary partition: %d", ret);
 		return ret;

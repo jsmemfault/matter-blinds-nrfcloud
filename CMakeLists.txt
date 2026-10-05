@@ -71,6 +71,7 @@ if(CONFIG_PROVISIONING)
   target_sources(app PRIVATE
     src/provisioning.c
     src/provisioning_attest.cpp
+    src/csr.c
   )
 endif()
 

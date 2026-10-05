@@ -20,10 +20,9 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/settings/settings.h>
 
-#include <mbedtls/pk.h>
-#include <mbedtls/entropy.h>
-#include <mbedtls/x509_csr.h>
-#include <mbedtls/x509_crt.h>
+#include <mbedtls/x509_crt.h>   /* certificate parsing, for expiry */
+
+#include "csr.h"
 
 #include <string.h>
 #include <errno.h>
@@ -37,17 +36,6 @@ LOG_MODULE_REGISTER(provisioning, LOG_LEVEL_INF);
 static uint8_t s_cert[PROV_CERT_DER_MAX];
 static size_t s_cert_len;
 static psa_key_id_t s_fallback_key = PSA_KEY_ID_NULL;
-
-/* --- RNG shim: mbedTLS x509write wants an f_rng, PSA has the entropy --- */
-
-static int prov_rng(void *ctx, unsigned char *out, size_t len)
-{
-	ARG_UNUSED(ctx);
-
-	return (psa_generate_random(out, len) == PSA_SUCCESS)
-		       ? 0
-		       : MBEDTLS_ERR_ENTROPY_SOURCE_FAILED;
-}
 
 /* --- Key management --- */
 
@@ -173,16 +161,14 @@ int provisioning_build_csr(const char *subject,
 			   uint8_t *der, size_t der_size, size_t *der_len)
 {
 	char subject_buf[96];
-	mbedtls_pk_context pk;
-	mbedtls_x509write_csr req;
 	int ret;
 
-	if (!der || !der_len || der_size < 64) {
+	if (!der || !der_len) {
 		return -EINVAL;
 	}
 
 	if (!key_exists(PROV_PSA_KEY_ID)) {
-		return -ENOENT;   /* picolibc has no ENOKEY */
+		return -ENOENT;
 	}
 
 	if (!subject) {
@@ -194,43 +180,14 @@ int provisioning_build_csr(const char *subject,
 		subject = subject_buf;
 	}
 
-	mbedtls_pk_init(&pk);
-	mbedtls_x509write_csr_init(&req);
-
 	/*
-	 * Opaque binding: the CSR is self-signed by the PSA key without the
-	 * private half ever materialising in mbedTLS memory.
+	 * csr.c emits the DER directly rather than going through
+	 * mbedtls_x509write_csr(). That API needs mbedtls_pk_setup_opaque() to
+	 * bind a non-exportable PSA key, and mbedTLS 4.x — shipped from NCS
+	 * 3.4.0 — removed the public PK module in favour of PSA. The private
+	 * key still never leaves PSA either way.
 	 */
-	ret = mbedtls_pk_setup_opaque(&pk, PROV_PSA_KEY_ID);
-	if (ret != 0) {
-		LOG_ERR("mbedtls_pk_setup_opaque failed: -0x%04x", (unsigned)-ret);
-		goto out;
-	}
-
-	mbedtls_x509write_csr_set_md_alg(&req, MBEDTLS_MD_SHA256);
-	mbedtls_x509write_csr_set_key(&req, &pk);
-
-	ret = mbedtls_x509write_csr_set_subject_name(&req, subject);
-	if (ret != 0) {
-		LOG_ERR("bad subject '%s': -0x%04x", subject, (unsigned)-ret);
-		goto out;
-	}
-
-	/* Writes to the END of the buffer and returns the length. */
-	ret = mbedtls_x509write_csr_der(&req, der, der_size, prov_rng, NULL);
-	if (ret < 0) {
-		LOG_ERR("mbedtls_x509write_csr_der failed: -0x%04x", (unsigned)-ret);
-		goto out;
-	}
-
-	*der_len = (size_t)ret;
-	memmove(der, der + der_size - *der_len, *der_len);
-	ret = 0;
-
-out:
-	mbedtls_x509write_csr_free(&req);
-	mbedtls_pk_free(&pk);
-	return ret == 0 ? 0 : -EIO;
+	return csr_write_der(PROV_PSA_KEY_ID, subject, der, der_size, der_len);
 }
 
 /* --- Certificate storage --- */

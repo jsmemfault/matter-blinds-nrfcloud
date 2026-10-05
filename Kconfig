@@ -42,15 +42,11 @@ config PROVISIONING
 	# (mbedtls check_config.h:1034). USE_PSA_CRYPTO is required anyway for
 	# mbedtls_pk_setup_opaque(), which is what keeps the private key inside
 	# PSA while the CSR is being signed.
-	select MBEDTLS_X509_CSR_WRITE_C
-	select MBEDTLS_X509_CREATE_C
-	select MBEDTLS_OID_C
-	select MBEDTLS_ASN1_WRITE_C
-	select MBEDTLS_PK_PARSE_C
-	select MBEDTLS_PK_WRITE_C
-	select MBEDTLS_USE_PSA_CRYPTO
-	# No MBEDTLS_PEM_WRITE_C: provisioning emits DER and base64-encodes it
-	# in the shell layer, so the PEM writer would be dead flash.
+	# No mbedTLS X.509 write selects: the CSR is encoded directly in csr.c.
+	# mbedtls_x509write_csr() needed mbedtls_pk_setup_opaque() to bind a
+	# non-exportable PSA key, and mbedTLS 4.x (NCS 3.4.0 onward) removed the
+	# public PK module. Encoding it ourselves drops six Kconfig dependencies
+	# and is immune to that churn.
 	select BASE64
 	help
 	  Generate the nRF Cloud identity keypair inside the device and emit a
@@ -102,6 +98,14 @@ endmenu
 # native UDP API — so overriding the two symbols directly is both cheaper and
 # more honest about what is actually needed.
 #
+# NCS 3.4.0 made MBEDTLS_TLS_LIBRARY promptless as well, so it can no longer be
+# set from prj.conf either. It is now selected only by the same Thread features
+# listed above, by the Wi-Fi hostap_crypto stack, or by NET_SOCKETS_SOCKOPT_TLS
+# (which drags in the Zephyr IP stack we deliberately avoid). On 3.2.x/3.3.x it
+# still carries a prompt, so a default here is harmless there and required here.
+config MBEDTLS_TLS_LIBRARY
+	default y
+
 config MBEDTLS_SSL_TLS_C
 	default y
 

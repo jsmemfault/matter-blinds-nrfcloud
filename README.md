@@ -70,12 +70,28 @@ diagnostic if you know which ecosystem produced them.
 
 ## Build
 
+Default target is **NCS 3.4.0 LTS**, which is what Nordic recommends as the base
+for new projects.
+
 ```bash
-nrfutil sdk-manager toolchain launch --ncs-version v3.3.0 \
-  --chdir /opt/nordic/ncs/v3.3.0 -- \
-  west build -p -b nrf52840dk/nrf52840 \
-  -d blinds-nrf52840/build blinds-nrf52840
+# nRF52840-DK
+west build -p -b nrf52840dk/nrf52840 -d build .
+
+# nRF5340-DK
+west build -p -b nrf5340dk/nrf5340/cpuapp -d build .
 ```
+
+### Older SDK lines (3.2.x / 3.3.x)
+
+NCS 3.4.0 moved the Matter partition layout from Partition Manager to
+devicetree. Pass `FILE_SUFFIX=ncs32` to build against the older mechanism:
+
+```bash
+west build -p -b nrf52840dk/nrf52840 -d build . -- -DFILE_SUFFIX=ncs32
+```
+
+The addresses are identical either way — only the declaration mechanism
+differs. See [`plans/ncs-34-migration.md`](plans/ncs-34-migration.md).
 
 Flash (nRF52840-DK over J-Link):
 

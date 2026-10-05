@@ -3,10 +3,22 @@
  * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
 
+/*
+ * NCS 3.4.0 declares the Matter partition layout in devicetree rather than
+ * Partition Manager. The addresses are identical to what
+ * pm_static_nrf52840dk_nrf52840.yml declared on 3.2.x/3.3.x — only the
+ * mechanism changed. For 3.2.x/3.3.x use -DFILE_SUFFIX=ncs32.
+ */
+#include <samples/matter/nrf52840_partitions.dtsi>
+
 / {
 	chosen {
 		nordic,pm-ext-flash = &mx25r64;
 	};
+};
+
+&mx25r64 {
+	status = "okay";
 };
 
 / {
