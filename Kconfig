@@ -143,6 +143,21 @@ config MBEDTLS_SSL_TLS_C
 config MBEDTLS_SSL_CLI_C
 	default y
 
+# Work around an upstream defect in the NCS Memfault integration.
+#
+# nrf/modules/memfault-firmware-sdk/Kconfig defaults this prefix to
+# "$(APP_VERSION_STRING)+", but Zephyr's kconfig.cmake exports the app version
+# as APPVERSION -- APP_VERSION_STRING is never placed in the Kconfig
+# environment. The reference therefore expands to nothing and every build
+# reports a version of "+<build id>", losing the semantic part entirely. The
+# sibling MEMFAULT_NCS_FW_VERSION uses APP_VERSION_TWEAK_STRING, which *is*
+# exported, so only the AUTO path is affected.
+#
+# This default is evaluated before the module's because the application Kconfig
+# is the top-level file. Remove it once NCS is fixed.
+config MEMFAULT_NCS_FW_VERSION_PREFIX
+	default "$(APPVERSION)+"
+
 source "$(ZEPHYR_CONNECTEDHOMEIP_MODULE_DIR)/config/nrfconnect/chip-module/Kconfig.features"
 source "$(ZEPHYR_CONNECTEDHOMEIP_MODULE_DIR)/config/nrfconnect/chip-module/Kconfig.defaults"
 source "$(ZEPHYR_NRF_MODULE_DIR)/samples/matter/common/src/Kconfig"

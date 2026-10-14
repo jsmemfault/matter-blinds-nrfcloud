@@ -23,6 +23,7 @@
 
 #ifdef CONFIG_MEMFAULT
 #include <memfault/core/data_packetizer.h>
+#include <memfault/core/platform/device_info.h>
 #endif
 
 /*
@@ -49,7 +50,23 @@ LOG_MODULE_REGISTER(nrfcloud_shell, LOG_LEVEL_INF);
 #define MEMFAULT_RELEASE_API_HOST "device.memfault.com"
 #define MEMFAULT_HW_VERSION       CONFIG_MEMFAULT_NCS_HW_VERSION
 #define MEMFAULT_SW_TYPE          CONFIG_MEMFAULT_NCS_FW_TYPE
-#define MEMFAULT_FW_VERSION       CONFIG_MEMFAULT_NCS_FW_VERSION
+
+/*
+ * The firmware version is generated, so it exists only at runtime.
+ *
+ * With MEMFAULT_NCS_FW_VERSION_AUTO the version is "<VERSION file>+<build id>",
+ * assembled on first call in the NCS port. The OTA release check must report
+ * exactly what the device reports to Memfault, or the server compares the
+ * wrong versions and either withholds an update or offers one already
+ * installed -- so read it from the same place rather than rebuilding it here.
+ */
+static const char *memfault_fw_version(void)
+{
+	sMemfaultDeviceInfo info;
+
+	memfault_platform_get_device_info(&info);
+	return info.software_version;
+}
 
 /* --- nrfcloud connect --- */
 
@@ -252,7 +269,7 @@ static int memfault_ota_check(const struct shell *sh,
 		       DEVICE_ID,
 		       MEMFAULT_HW_VERSION,
 		       MEMFAULT_SW_TYPE,
-		       MEMFAULT_FW_VERSION);
+		       memfault_fw_version());
 	if (ret < 0 || (size_t)ret >= sizeof(proxy_uri)) {
 		shell_error(sh, "OTA URL too long");
 		return -ENOMEM;
@@ -388,7 +405,7 @@ static int cmd_nrfcloud_ota_check(const struct shell *sh, size_t argc,
 	if (ret > 0) {
 		shell_print(sh, "Update available: %s", url_buf);
 	} else if (ret == 0) {
-		shell_print(sh, "Up to date (current: %s)", MEMFAULT_FW_VERSION);
+		shell_print(sh, "Up to date (current: %s)", memfault_fw_version());
 	}
 
 	nrfcloud_disconnect(&s);
@@ -489,7 +506,7 @@ static int cmd_nrfcloud_ota(const struct shell *sh, size_t argc,
 	if (ret <= 0) {
 		if (ret == 0) {
 			shell_print(sh, "Up to date (current: %s)",
-				    MEMFAULT_FW_VERSION);
+				    memfault_fw_version());
 		}
 		nrfcloud_disconnect(&s);
 		return (ret < 0) ? ret : 0;

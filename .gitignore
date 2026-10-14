@@ -1,4 +1,5 @@
 build/
+build_*/
 __pycache__/
 *.pyc
 .DS_Store
@@ -8,3 +9,8 @@ keys/
 *.pem
 !src/**/*.pem
 onboard.csv
+
+# Memfault upload credentials. The organization auth token grants write access
+# to the whole org, so it never belongs in the tree. Copy .memfault.env.example
+# to .memfault.env and fill it in locally.
+.memfault.env
