@@ -346,11 +346,12 @@ def main():
         if args.csv:
             # Column order follows nRF Cloud's onboarding CSV. Confirm against
             # the version of nrf_cloud_onboard you are running before a real run.
-            new = not os.path.exists(args.csv)
+            # No header row: nrf_cloud_onboard POSTs this file verbatim and
+            # treats every row as a device, so a header would be onboarded as a
+            # device literally named "deviceId".
+            # Columns: deviceId, subType, tags, fwTypes, certPem
             with open(args.csv, "a", newline="") as fh:
                 w = csv.writer(fh)
-                if new:
-                    w.writerow(["deviceId", "subType", "tags", "fwTypes", "certPem"])
                 w.writerow([args.device_id, "", "", "", cert_pem])
             print(f"      appended onboarding row to {args.csv}")
 
