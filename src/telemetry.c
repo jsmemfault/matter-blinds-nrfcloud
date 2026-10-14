@@ -39,6 +39,7 @@
 #ifdef CONFIG_MEMFAULT
 #include <memfault/core/data_packetizer.h>
 #include <memfault/metrics/metrics.h>
+#include <memfault/metrics/platform/timer.h>
 #include <memfault/core/trace_event.h>
 #endif
 
@@ -82,6 +83,66 @@ void telemetry_request_upload(void)
 {
 	k_sem_give(&s_upload_now);
 }
+
+#ifdef CONFIG_MEMFAULT
+/*
+ * Heartbeat collection runs on this thread, not the system workqueue.
+ *
+ * The SDK's stock Zephyr port fires the heartbeat from a k_timer and then
+ * dispatches it with k_work_submit, so the collect callback lands on the
+ * system workqueue. That queue has a 1120-byte stack here, and
+ * memfault_metrics_heartbeat_collect_data() reaches into both OpenThread and
+ * the CHIP stack -- deep C++ call chains that overflow it, which faults
+ * instead of producing a heartbeat. Taking the CHIP stack lock from the
+ * system workqueue is a deadlock risk in its own right.
+ *
+ * So MEMFAULT_METRICS_TIMER_CUSTOM is set and the timer only signals; the
+ * callback is invoked from the telemetry thread's 8 KB stack, which is also
+ * the thread that will upload the result moments later.
+ */
+static MemfaultPlatformTimerCallback *s_metrics_cb;
+static K_SEM_DEFINE(s_heartbeat_now, 0, 1);
+static atomic_t s_heartbeat_debug_req;
+
+static void metrics_timer_expiry(struct k_timer *timer)
+{
+	ARG_UNUSED(timer);
+	k_sem_give(&s_heartbeat_now);
+	/* Serialise and ship in the same wakeup: one radio window, not two. */
+	k_sem_give(&s_upload_now);
+}
+
+static K_TIMER_DEFINE(s_metrics_timer, metrics_timer_expiry, NULL);
+
+bool memfault_platform_metrics_timer_boot(uint32_t period_sec,
+					  MemfaultPlatformTimerCallback callback)
+{
+	s_metrics_cb = callback;
+	k_timer_start(&s_metrics_timer, K_SECONDS(period_sec),
+		      K_SECONDS(period_sec));
+	return true;
+}
+
+void telemetry_request_heartbeat(void)
+{
+	atomic_set(&s_heartbeat_debug_req, 1);
+	k_sem_give(&s_upload_now);
+}
+
+/* Called from the telemetry thread only. */
+static void service_heartbeat(void)
+{
+	if (atomic_cas(&s_heartbeat_debug_req, 1, 0)) {
+		memfault_metrics_heartbeat_debug_trigger();
+		LOG_INF("Heartbeat serialised on request");
+	}
+
+	if (k_sem_take(&s_heartbeat_now, K_NO_WAIT) == 0 &&
+	    s_metrics_cb != NULL) {
+		s_metrics_cb();
+	}
+}
+#endif /* CONFIG_MEMFAULT */
 
 /* Filled in by the transport so upload cost can be reported per heartbeat. */
 struct telemetry_timing telemetry_timing;
@@ -635,9 +696,21 @@ static void telemetry_thread(void *p1, void *p2, void *p3)
 #endif
 
 	while (true) {
+#ifdef CONFIG_MEMFAULT
+		/*
+		 * Collect on schedule regardless of connectivity. A heartbeat
+		 * covering a detached interval is the one worth having, and
+		 * s_heartbeat_now only holds one pending tick, so gating this
+		 * behind attachment would silently drop every heartbeat for
+		 * the duration of an outage.
+		 */
+		service_heartbeat();
+#endif
+
 		/* Wait for Thread network */
-		while (!is_thread_attached()) {
+		if (!is_thread_attached()) {
 			k_sleep(K_SECONDS(POLL_INTERVAL_SEC));
+			continue;
 		}
 
 		/* Sync time if needed */

@@ -56,12 +56,11 @@ void AppTask::ButtonEventHandler(Nrf::ButtonState state, Nrf::ButtonMask hasChan
 #ifdef CONFIG_BLINDS_BUTTON_HEARTBEAT
 	if ((HEARTBEAT_BUTTON_MASK & hasChanged) && (HEARTBEAT_BUTTON_MASK & state)) {
 		/*
-		 * Serialising a heartbeat is quick but not instant, and this
-		 * runs in button context, so hand it to the telemetry thread
-		 * rather than doing it here.
+		 * Collection reaches into OpenThread and the CHIP stack, and
+		 * this runs on the system workqueue, so hand it to the
+		 * telemetry thread rather than doing it here.
 		 */
-		memfault_metrics_heartbeat_debug_trigger();
-		telemetry_request_upload();
+		telemetry_request_heartbeat();
 		LOG_INF("Heartbeat triggered by button; uploading now");
 	}
 #endif

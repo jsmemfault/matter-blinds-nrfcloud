@@ -38,6 +38,14 @@ void telemetry_record_upload_err(void);
  */
 void telemetry_request_upload(void);
 
+/*
+ * Ask the telemetry thread to serialise a heartbeat now and upload it.
+ *
+ * Collection reaches into OpenThread and the CHIP stack, so it must not run
+ * on the system workqueue or in button context. Safe from any thread.
+ */
+void telemetry_request_heartbeat(void);
+
 #ifdef __cplusplus
 }
 #endif
