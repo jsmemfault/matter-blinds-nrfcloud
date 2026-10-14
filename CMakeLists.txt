@@ -49,6 +49,7 @@ target_sources(app PRIVATE
   src/coap_codec.c
   src/jwt.c
   src/matter_metrics.cpp
+  src/border_router.c
 )
 
 # nrfcloud_shell.c is nothing but shell command handlers, so it drops out of a
@@ -61,6 +62,10 @@ endif()
 
 if(CONFIG_BLINDS_UDP_ECHO_SHELL)
   target_sources(app PRIVATE src/udp_echo_shell.c)
+endif()
+
+if(CONFIG_BLINDS_SIM)
+  target_sources(app PRIVATE src/blinds_sim.cpp)
 endif()
 
 if(CONFIG_BLINDS_THREAD_AUTOJOIN)

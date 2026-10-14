@@ -1,3 +1,22 @@
 /* Application-specific Memfault trace reasons.
  * See: https://docs.memfault.com/docs/embedded/trace-events
+ *
+ * These populate Memfault's event timeline. Heartbeat metrics say what the
+ * averages were; traces say what actually happened and when, which is the
+ * difference between "detached time was elevated this interval" and "the
+ * device lost its parent at 14:02 and again at 14:09".
  */
+
+/* Thread connectivity events — the gateway-behaviour signal */
+MEMFAULT_TRACE_REASON_DEFINE(thread_detached)
+MEMFAULT_TRACE_REASON_DEFINE(thread_parent_change)
+
+/* Telemetry path failures, each carrying the underlying error code */
+MEMFAULT_TRACE_REASON_DEFINE(dtls_handshake_failed)
+MEMFAULT_TRACE_REASON_DEFINE(nrfcloud_auth_failed)
+MEMFAULT_TRACE_REASON_DEFINE(nrfcloud_chunk_rejected)
+MEMFAULT_TRACE_REASON_DEFINE(sntp_failed)
+
+/* Product faults */
+MEMFAULT_TRACE_REASON_DEFINE(blinds_stall)
+MEMFAULT_TRACE_REASON_DEFINE(blinds_obstruction)

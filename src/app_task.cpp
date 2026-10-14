@@ -8,6 +8,10 @@
 
 #include "window_covering.h"
 #include "matter_metrics.h"
+#ifdef CONFIG_BLINDS_BUTTON_HEARTBEAT
+#include "telemetry.h"
+#include <memfault/metrics/metrics.h>
+#endif
 
 #include "app/matter_init.h"
 #include "app/task_executor.h"
@@ -29,6 +33,16 @@ Nrf::Matter::IdentifyCluster sIdentifyCluster(WindowCovering::Endpoint());
 
 #define OPEN_BUTTON_MASK DK_BTN2_MSK
 #define CLOSE_BUTTON_MASK DK_BTN3_MSK
+
+/*
+ * Button 1 is the board library's function/factory-reset button and buttons 2
+ * and 3 are open/close, so button 4 is the one left. It forces a heartbeat and
+ * wakes the telemetry thread, which turns a demo from "wait out the upload
+ * interval" into "press this and watch the dashboard".
+ */
+#ifdef CONFIG_BLINDS_BUTTON_HEARTBEAT
+#define HEARTBEAT_BUTTON_MASK DK_BTN4_MSK
+#endif
 } /* namespace */
 
 void AppTask::ButtonEventHandler(Nrf::ButtonState state, Nrf::ButtonMask hasChanged)
@@ -38,6 +52,19 @@ void AppTask::ButtonEventHandler(Nrf::ButtonState state, Nrf::ButtonMask hasChan
 			(OPEN_BUTTON_MASK & state) ? WindowButtonAction::Pressed : WindowButtonAction::Released;
 		Nrf::PostTask([action] { OpenHandler(action); });
 	}
+
+#ifdef CONFIG_BLINDS_BUTTON_HEARTBEAT
+	if ((HEARTBEAT_BUTTON_MASK & hasChanged) && (HEARTBEAT_BUTTON_MASK & state)) {
+		/*
+		 * Serialising a heartbeat is quick but not instant, and this
+		 * runs in button context, so hand it to the telemetry thread
+		 * rather than doing it here.
+		 */
+		memfault_metrics_heartbeat_debug_trigger();
+		telemetry_request_upload();
+		LOG_INF("Heartbeat triggered by button; uploading now");
+	}
+#endif
 
 	if (CLOSE_BUTTON_MASK & hasChanged) {
 		WindowButtonAction action =

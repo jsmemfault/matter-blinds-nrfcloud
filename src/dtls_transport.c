@@ -9,9 +9,14 @@
 #include "coap_codec.h"
 #include "credentials.h"
 #include "jwt.h"
+#include "telemetry.h"
 
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+
+#ifdef CONFIG_MEMFAULT
+#include <memfault/core/trace_event.h>
+#endif
 
 #include <openthread.h>
 #include <openthread/udp.h>
@@ -255,6 +260,9 @@ uint8_t coap_random_token(void)
 
 int nrfcloud_connect(struct nrfcloud_session *s)
 {
+	const int64_t t_connect_start = k_uptime_get();
+	int64_t t_phase;
+
 	k_mutex_lock(&nrfcloud_mutex, K_FOREVER);
 
 	otInstance *instance = openthread_get_default_instance();
@@ -365,18 +373,27 @@ int nrfcloud_connect(struct nrfcloud_session *s)
 
 	/* DTLS handshake */
 	LOG_INF("DTLS handshake...");
+	t_phase = k_uptime_get();
 
 	do {
 		ret = mbedtls_ssl_handshake(&s->ssl);
 	} while (ret == MBEDTLS_ERR_SSL_WANT_READ ||
 		 ret == MBEDTLS_ERR_SSL_WANT_WRITE);
 
+	telemetry_timing.handshake_ms = (uint32_t)(k_uptime_get() - t_phase);
+
 	if (ret != 0) {
 		LOG_ERR("DTLS handshake FAILED: -0x%04x", -ret);
+#ifdef CONFIG_MEMFAULT
+		MEMFAULT_TRACE_EVENT_WITH_LOG(dtls_handshake_failed,
+			"mbedtls -0x%04x after %u ms", -ret,
+			(unsigned)telemetry_timing.handshake_ms);
+#endif
 		goto cleanup;
 	}
 
-	LOG_INF("DTLS OK (%s)", mbedtls_ssl_get_ciphersuite(&s->ssl));
+	LOG_INF("DTLS OK (%s) in %u ms", mbedtls_ssl_get_ciphersuite(&s->ssl),
+		(unsigned)telemetry_timing.handshake_ms);
 
 	/* Generate JWT */
 	uint32_t now = get_current_time();
@@ -420,6 +437,7 @@ int nrfcloud_connect(struct nrfcloud_session *s)
 	}
 
 	LOG_INF("Sending POST /auth/jwt ...");
+	t_phase = k_uptime_get();
 
 	ret = mbedtls_ssl_write(&s->ssl, coap_buf, pkt_len);
 	if (ret < 0) {
@@ -434,17 +452,33 @@ int nrfcloud_connect(struct nrfcloud_session *s)
 		goto disconnect;
 	}
 
+	/*
+	 * Measured, not assumed: this round trip came back at a consistent
+	 * 19.1 s on first hardware bring-up, success and failure alike. On a
+	 * battery device that is the dominant cost of an upload.
+	 */
+	telemetry_timing.auth_ms = (uint32_t)(k_uptime_get() - t_phase);
+
 	int coap_code = coap_parse_response(coap_buf, ret);
 
-	LOG_INF("Auth response: %d.%02d", coap_code / 100, coap_code % 100);
+	LOG_INF("Auth response: %d.%02d (%u ms)", coap_code / 100, coap_code % 100,
+		(unsigned)telemetry_timing.auth_ms);
 
 	if (coap_code != 201) {
 		LOG_ERR("Authentication failed");
+#ifdef CONFIG_MEMFAULT
+		MEMFAULT_TRACE_EVENT_WITH_LOG(nrfcloud_auth_failed,
+			"CoAP %d.%02d after %u ms", coap_code / 100,
+			coap_code % 100, (unsigned)telemetry_timing.auth_ms);
+#endif
 		ret = -EACCES;
 		goto disconnect;
 	}
 
-	LOG_INF("Authenticated to nRF Cloud");
+	telemetry_timing.connect_ms = (uint32_t)(k_uptime_get() - t_connect_start);
+
+	LOG_INF("Authenticated to nRF Cloud (%u ms total)",
+		(unsigned)telemetry_timing.connect_ms);
 	return 0;
 
 disconnect:

@@ -99,3 +99,121 @@ MEMFAULT_METRICS_KEY_DEFINE(time_sync_ok, kMemfaultMetricType_Unsigned)
  * expire long before a motorised shade does. */
 MEMFAULT_METRICS_KEY_DEFINE(identity_state, kMemfaultMetricType_Unsigned)
 MEMFAULT_METRICS_KEY_DEFINE(identity_cert_days_left, kMemfaultMetricType_Unsigned)
+
+/* ---------------- Border router identity ---------------- */
+
+/*
+ * Who made the gateway this device is attached to.
+ *
+ * Obtained by asking the parent directly over Thread 1.3 network diagnostics
+ * (TLV 25 Vendor Name, TLV 26 Vendor Model), not inferred.
+ *
+ * The obvious approach — OUI lookup on the parent's extended address — does
+ * not work. Every border router observed so far uses a locally administered
+ * EUI-64 (verified on a Nest: a62d405ee2e5cd52, local bit set), so there is no
+ * manufacturer in it to read.
+ *
+ * Caveats encoded rather than hidden: on a multi-router mesh the parent is not
+ * necessarily the border router, and the query costs a round trip, so it runs
+ * once per attach rather than once per heartbeat.
+ *
+ * Reported as strings so the fleet can be segmented on what the gateway
+ * actually calls itself. Mapping to a tidy enum belongs in the dashboard, not
+ * in firmware — see matter_admin_vendor_id for why.
+ */
+MEMFAULT_METRICS_STRING_KEY_DEFINE(ot_br_vendor_name, 32)
+MEMFAULT_METRICS_STRING_KEY_DEFINE(ot_br_vendor_model, 32)
+
+/* Corroborating signal, and free: Google names its networks NEST-PAN-xxxx,
+ * Amazon/eero AMZN-Thread-xxxx. Weaker than the vendor TLV but costs nothing. */
+MEMFAULT_METRICS_STRING_KEY_DEFINE(ot_network_name, 16)
+
+/* A gateway that does not answer diagnostics is itself a finding. */
+MEMFAULT_METRICS_KEY_DEFINE(ot_br_query_failures, kMemfaultMetricType_Unsigned)
+
+/* ---------------- Thread, extended ---------------- */
+
+/*
+ * Data poll period. On a sleepy end device this is the dominant term in radio
+ * duty cycle, so it is the closest proxy to energy cost we can report without
+ * a power monitor.
+ */
+MEMFAULT_METRICS_KEY_DEFINE(ot_poll_period_ms, kMemfaultMetricType_Unsigned)
+
+/* MAC counter deltas — the rest of the RF picture */
+MEMFAULT_METRICS_KEY_DEFINE(ot_rx_total, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(ot_tx_acked, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(ot_tx_err_busy, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(ot_rx_duplicated, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(ot_rx_err_no_frame, kMemfaultMetricType_Unsigned)
+
+/* IPv6 forwarding failures — distinguishes "radio is fine, routing is not" */
+MEMFAULT_METRICS_KEY_DEFINE(ot_ip6_tx_fail, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(ot_ip6_rx_fail, kMemfaultMetricType_Unsigned)
+
+MEMFAULT_METRICS_KEY_DEFINE(ot_rloc16, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(ot_child_timeout_s, kMemfaultMetricType_Unsigned)
+
+/*
+ * SRP registration state. Matter operational discovery depends on it, so a
+ * device that is on Thread but not SRP-registered is reachable by us and
+ * invisible to the ecosystem — a failure mode with no other symptom.
+ */
+MEMFAULT_METRICS_KEY_DEFINE(ot_srp_registered, kMemfaultMetricType_Unsigned)
+
+/*
+ * Whether the gateway publishes a NAT64 prefix, probed by attempting a
+ * synthesis and checking the error. This is the gateway-compatibility question
+ * Warema actually asked, answered as a fleet metric: a device behind a
+ * NAT64-less border router cannot reach the cloud at all.
+ */
+MEMFAULT_METRICS_KEY_DEFINE(ot_nat64_available, kMemfaultMetricType_Unsigned)
+
+/* ---------------- Telemetry plumbing, extended ---------------- */
+
+/*
+ * Upload cost breakdown. nrfcloud_auth_ms exists because nRF Cloud's response
+ * to POST /auth/jwt was observed at a consistent 19.1 s — identical to the
+ * millisecond across runs, success and failure alike. On a battery device that
+ * is a material energy cost, and it needs to be a measured fleet number rather
+ * than one lab anecdote.
+ */
+MEMFAULT_METRICS_KEY_DEFINE(nrfcloud_handshake_ms, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(nrfcloud_auth_ms, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(nrfcloud_connect_ms, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(nrfcloud_chunks_sent, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(nrfcloud_bytes_sent, kMemfaultMetricType_Unsigned)
+
+/* Cold-boot time sync took three attempts (~37 s) on first hardware run. */
+MEMFAULT_METRICS_KEY_DEFINE(sntp_sync_ms, kMemfaultMetricType_Unsigned)
+MEMFAULT_METRICS_KEY_DEFINE(sntp_attempts, kMemfaultMetricType_Unsigned)
+
+/* ---------------- Product behaviour, extended ---------------- */
+
+/*
+ * Cumulative travel in percent-of-full-range. The mechanical wear proxy: a
+ * shade rated for N full cycles can be tracked against its actual duty.
+ */
+MEMFAULT_METRICS_KEY_DEFINE(blinds_travel_pct_total, kMemfaultMetricType_Unsigned)
+
+/* Obstruction detection trips — the support-call predictor. */
+MEMFAULT_METRICS_KEY_DEFINE(blinds_obstructions, kMemfaultMetricType_Unsigned)
+
+/* Motor current at last sample; rising trend indicates binding mechanism. */
+MEMFAULT_METRICS_KEY_DEFINE(blinds_motor_current_ma, kMemfaultMetricType_Unsigned)
+
+/*
+ * Per-movement session. Each covering movement produces its own report, which
+ * is how a mechanical fault shows up as a trend across thousands of units
+ * rather than as a single anomalous heartbeat.
+ */
+MEMFAULT_METRICS_SESSION_KEY_DEFINE(blinds_movement)
+
+MEMFAULT_METRICS_KEY_DEFINE_WITH_SESSION(
+	move_duration_ms, kMemfaultMetricType_Unsigned, blinds_movement)
+MEMFAULT_METRICS_KEY_DEFINE_WITH_SESSION(
+	move_distance_pct, kMemfaultMetricType_Unsigned, blinds_movement)
+MEMFAULT_METRICS_KEY_DEFINE_WITH_SESSION(
+	move_peak_current_ma, kMemfaultMetricType_Unsigned, blinds_movement)
+MEMFAULT_METRICS_KEY_DEFINE_WITH_SESSION(
+	move_stalls, kMemfaultMetricType_Unsigned, blinds_movement)

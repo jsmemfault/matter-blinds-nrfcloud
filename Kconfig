@@ -12,6 +12,37 @@ config OPENTHREAD_DEFAULT_TX_POWER
 
 menu "Observability"
 
+config BLINDS_SIM
+	bool "Simulate shade duty cycle"
+	default n
+	help
+	  Drive the Matter WindowCovering cluster on a repeating daily schedule
+	  so the blinds_* metrics carry realistic signal on a devkit with no
+	  motor attached. Commands go through the same path a controller uses,
+	  so the reported values are still live attribute reads.
+
+	  Demo and pilot aid. Leave disabled in a production image.
+
+config BLINDS_SIM_DAY_SECONDS
+	int "Seconds of wall clock per simulated day"
+	depends on BLINDS_SIM
+	default 600
+	help
+	  A compressed day, so a dashboard fills with plausible duty cycle in
+	  minutes rather than weeks. Four movements are spread across it.
+
+config BLINDS_BUTTON_HEARTBEAT
+	bool "Button 4 forces a heartbeat and an immediate upload"
+	default y
+	depends on MEMFAULT
+	help
+	  Collects a Memfault heartbeat and wakes the telemetry thread so the
+	  chunk uploads within seconds instead of waiting out the upload
+	  interval. Button 1 is the board function/factory-reset button and
+	  buttons 2 and 3 are open/close, so button 4 is the free one.
+
+	  Invaluable for demos; harmless to ship.
+
 config BLINDS_UDP_ECHO_SHELL
 	bool "UDP echo shell commands"
 	default y
