@@ -41,7 +41,8 @@ import sys
 try:
     import serial
 except ImportError:
-    sys.exit("pyserial required: pip install pyserial")
+    # Only the UART transport needs pyserial; --port rtt works without it.
+    serial = None
 
 try:
     from cryptography import x509
@@ -67,13 +68,79 @@ class ProvisionError(Exception):
 # Device I/O
 # --------------------------------------------------------------------------
 
+class _RttLink:
+    """A serial-like link to a Zephyr shell on SEGGER RTT.
+
+    Some boards cannot offer a working UART: the nRF5340-DK's Interface MCU can
+    stop passing VCOM traffic while the debug probe still works perfectly, and
+    then RTT is the only console there is. RTT also wins on a custom board that
+    never routed a UART off-chip.
+
+    Expects a J-Link session already holding the probe and serving the RTT
+    telnet port, e.g.
+
+        JLinkExe -AutoConnect 1 -CommandFile jlink.cmd   # si SWD / device / connect
+
+    Exposes only the four methods Device uses, so the caller cannot tell the
+    difference between this and pyserial.
+    """
+
+    def __init__(self, host="127.0.0.1", port=19021, read_timeout=0.2):
+        import socket
+
+        self.sock = socket.create_connection((host, port), timeout=5)
+        self.sock.settimeout(read_timeout)
+
+    def reset_input_buffer(self):
+        # Drain whatever the shell has already emitted. Without this the first
+        # command's output arrives mixed with the previous one's tail.
+        import socket
+
+        self.sock.settimeout(0.05)
+        try:
+            while True:
+                if not self.sock.recv(4096):
+                    break
+        except (socket.timeout, OSError):
+            pass
+        finally:
+            self.sock.settimeout(0.2)
+
+    def write(self, data):
+        return self.sock.sendall(data)
+
+    def flush(self):
+        pass
+
+    def read(self, size):
+        import socket
+
+        try:
+            return self.sock.recv(size)
+        except (socket.timeout, OSError):
+            return b""
+
+    def close(self):
+        self.sock.close()
+
+
 class Device:
     def __init__(self, port, baud=115200, timeout=10):
         # Small read timeout so idle detection is responsive; `timeout` stays the
         # per-command hard deadline. A 10 s read timeout makes every command that
         # produces no output (cert_data, for one) block for the full 10 s, which
         # turns a nine-chunk certificate upload into minutes.
-        self.ser = serial.Serial(port, baud, timeout=0.2)
+        #
+        # "rtt" or "rtt:<host>:<port>" selects the RTT link instead of a UART.
+        if port == "rtt" or port.startswith("rtt:"):
+            bits = port.split(":")
+            host = bits[1] if len(bits) > 1 and bits[1] else "127.0.0.1"
+            rtt_port = int(bits[2]) if len(bits) > 2 and bits[2] else 19021
+            self.ser = _RttLink(host, rtt_port)
+        else:
+            if serial is None:
+                sys.exit("pyserial required for a UART port: pip install pyserial")
+            self.ser = serial.Serial(port, baud, timeout=0.2)
         self.timeout = timeout
 
     def close(self):
@@ -271,7 +338,9 @@ def upload_certificate(dev, cert_der):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--port", required=True, help="serial port of the device")
+    ap.add_argument("--port", required=True,
+                    help="serial port, or 'rtt' / 'rtt:<host>:<port>' for a "
+                         "Zephyr shell over SEGGER RTT")
     ap.add_argument("--device-id", required=True, help="canonical device ID (CSR CN)")
     ap.add_argument("--org", help="organisation for the CSR subject (O=)")
     ap.add_argument("--ca", help="product CA certificate (PEM)")
